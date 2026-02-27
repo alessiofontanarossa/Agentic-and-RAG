@@ -2,6 +2,7 @@ import streamlit as st
 import os, shutil, time
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 import uuid
+from st_copy_to_clipboard import st_copy_to_clipboard
 
 # put main page here before loading heavy stuff from backend
 st.set_page_config(page_title = "My RAG app", page_icon = "🤖", layout = "wide")
@@ -169,15 +170,18 @@ try:
             if isinstance(msg, HumanMessage):
                 st.chat_message("user").write(msg.content)
             elif isinstance(msg, ToolMessage):
-                with st.chat_message("assistant"):
+                with st.chat_message("🧐"):
                     st.markdown(f"📄 **Retrieved Documents (via {msg.name}):**\n\n{msg.content}")
             elif isinstance(msg, AIMessage) and msg.content:
-                with st.chat_message("assistant"):
-                    st.markdown(f"🤖 **Final Answer:**\n\n{msg.content}")
+                chat_msg = st.chat_message("assistant")
+                with chat_msg:
+                    st.markdown(f"**Final Answer:**\n\n{msg.content}")
+                    unique_btn_key = f"copy_btn_{uuid.uuid4().hex[:8]}"
+                    st_copy_to_clipboard(msg.content, before_copy_label = "Copy Message", key = unique_btn_key)
 except Exception:
     pass # No past conversation
 
-query = st.chat_input("Ask what you want: ")
+query = st.chat_input("Ask what you want")
 
 if query:
     st.chat_message("user").write(query)
@@ -185,19 +189,29 @@ if query:
     final_answer_container = None
     full_final_answer = ""
     
+    stop_button_container = st.sidebar.empty() # stop button, should be before the spinner
+    if stop_button_container.button("🛑 Stop Generation", key = "stop_btn"):
+        st.stop()
+    
+    finished_automatically = False
+
+    stream_generator = financial_assistant_team.stream(
+                            {"messages": [HumanMessage(content = query)]}, 
+                            config = config,
+                            stream_mode = "messages")
+
     with st.spinner("Supernotes is thinking..."):
-        for msg_chunk, metadata in financial_assistant_team.stream(
-            {"messages": [HumanMessage(content = query)]}, 
-            config = config,
-            stream_mode = "messages"):
+        for msg_chunk, metadata in stream_generator:
             
             node_name = metadata.get("langgraph_node", "")
             
-            if hasattr(msg_chunk, "tool_calls") and msg_chunk.tool_calls and msg_chunk.tool_calls[0]['name'] != "":
-                st.toast(f"🛠️ I am using the tool: '{msg_chunk.tool_calls[0]['name']}'")
+            if hasattr(msg_chunk, "tool_call_chunks") and msg_chunk.tool_call_chunks:
+                tool_name =  msg_chunk.tool_call_chunks[0].get('name', None)
+                if tool_name:
+                    st.toast(f"🛠️ Using the tool: '{msg_chunk.tool_call_chunks[0]['name']}'", duration = 7)
             
             elif isinstance(msg_chunk, ToolMessage):
-                with st.chat_message("assistant"):
+                with st.chat_message("🧐"):
                     st.markdown(f"📄 **Retrieved Documents (via {msg_chunk.name}):**\n\n{msg_chunk.content}")
             
             elif isinstance(msg_chunk, AIMessage) and msg_chunk.content:
@@ -208,8 +222,22 @@ if query:
                     
                     full_final_answer += msg_chunk.content
                     
-                    final_answer_container.markdown(f"🤖 **Final Answer:**\n\n{full_final_answer} ▌")
+                    final_answer_container.markdown(f"**Final Answer:**\n\n{full_final_answer} ▌")
         
+        stop_button_container.empty()
+
         if final_answer_container is not None:
-            final_answer_container.markdown(f"🤖 **Final Answer:**\n\n{full_final_answer}")
+            final_answer_container.markdown(f"**Final Answer:**\n\n{full_final_answer}")
+            with chat_msg:
+                unique_btn_key = f"copy_btn_{uuid.uuid4().hex[:8]}"
+                st_copy_to_clipboard(full_final_answer, before_copy_label = "Copy Message", key = unique_btn_key)
+
+
+
+   
+    
+    
+
+
+   
 

@@ -1,6 +1,7 @@
 # pip install dotenv openai IPython pypdf
 # pip install langchain langchain-community langchain_openai langchain_core langgraph==1.0.8 chromadb faiss-cpu langchain-chroma langchain_experimental
 # pip install streamlit langchain-qdrant ddgs duckduckgo-search langgraph-checkpoint-sqlite watchdog
+# pip install streamlit-clipboard st-copy-to-clipboard
 
 #########################################
 ################ IMPORTS ################
@@ -35,7 +36,7 @@ from langchain_core.tools import tool
 from langgraph.graph import MessagesState
 from langgraph.graph import START, StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
-
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, Filter, FieldCondition, MatchValue
@@ -53,6 +54,8 @@ from langchain_core.tools import tool
 from my_tools import get_my_tools
 
 from IPython.display import Image, display
+
+from langchain_core.messages import trim_messages
 
 #################################################
 ################ HUPERPARAMETERS ################
@@ -142,8 +145,6 @@ def backend_setup():
 
     sys_msg = SystemMessage(content = TEAM_LEADER_PROMPT)
 
-    from langchain_core.messages import trim_messages
-
     trimmer = trim_messages(
         max_tokens = SHORT_MEMORY_TOKENS, 
         strategy = "last", 
@@ -153,6 +154,10 @@ def backend_setup():
     TEAM_LEADER_NODE_NAME = "team_leader_node"
     def team_leader_node(state: MessagesState):
         short_session_history = trimmer.invoke(state["messages"])
+        # the while is needed to stop generation
+        while short_session_history and isinstance(short_session_history[0], ToolMessage):
+            short_session_history.pop(0)
+
         messages_to_send = [sys_msg] + short_session_history
         return {"messages": [llm_with_tools.invoke(messages_to_send)]}
 
